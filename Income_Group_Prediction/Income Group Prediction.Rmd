@@ -1,0 +1,421 @@
+---
+title: Prediction Whether the Individual Belongs to Low Income Group or High Income
+  Group
+author: "Ashutosh Tripathi"
+date: "10 August 2018"
+output: 
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+---
+
+# First Thing First : Clear your environment First.
+
+```{r}
+
+rm(list = ls(all=TRUE))
+
+```
+
+# Reading & Understanding the Data
+
+## Read the Data
+
+Make sure the dataset is located in your current working directory, else you can change your working directory using the "setwd()" function.
+
+```{r}
+#Read and Understand the data
+# Get the data
+getwd()
+#setwd("C:/Ashutosh/ML/")
+train_data = read.csv(file="Income_Group_train_data.csv",header = TRUE,na.strings = c(""," ","?","#","NA"))
+
+head(train_data)
+```
+
+```{r}
+tail(train_data)
+```
+
+## Understand the data
+
+### str() function
+
+* str() function will give the dimensions and types of attributes in the dataset
+
+```{r}
+str(train_data)
+```
+#### Observations from str() function:
+* The dataset has 31587 observations and 18 variables.
+
+#### Attribute Description
+
+1. age: continuous variable of Numeric type.
+2. working_sector: Factor with 7 different levels like "local_body","national",....
+3. financial_weight: Numeric.
+4. qualification: Factor with 7 different levels like "10th","11th",
+5. years_of_education: Numeric.
+6. tax paid: Numeric
+7. loan taken: Categorical variable with two levels defining whether the person has taken loan or not
+8. marital status: categorical variable with 7 different level like "Divorced","Married-civilian",..
+9. occupation: categorical variable with 14 levels "cleaner","clerical",..
+10. relationship : Categorical variable with 6 levels
+11. ethnicity : categorical variable with 5 levels
+12. gender: two level categorical variable (Male/Female)
+13. gain : continuous variable of numeric type
+14. loss: continuous variable of numeric type
+15. working_hours : it is a continuous variables
+16. country: categorical variable with 41 levels of different countries.
+__Response Variable (desired target):__
+17. target: numeric with 0,1.
+
+### summary() function
+
+* summary() function will describe the distribution of variables in the dataset
+
+```{r}
+summary(train_data)
+```
+
+#### Observations from summary() function:
+
+* Summary Function calculates range (min and max value), 1st quartile, median, mean and 3rd quartile for each continuous numeric variable.
+* for categorical variable it groups them. first few are highest occuring categories and remaining are put under other group.
+* It also calculates total no of NA (if any) values for each attributes.
+* one very important observation here is from target variable. 0 mean low income, 1 mean high income. so frommean value 0.2412 we can say about 24% fall under high income group
+
+## identify cat variable and num variable
+
+```{r}
+cat_cols = c("working_sector","qualification","years_of_education","loan_taken","marital_status","occupation","relationship","ethnicity","gender","country")
+num_cols = setdiff(colnames(train_data),cat_cols)
+cat_cols
+```
+
+```{r}
+num_cols
+```
+
+
+```{r}
+str(train_data)
+```
+
+## Converting to appropriate data types
+```{r}
+train_data[,cat_cols] = data.frame(apply(train_data[,cat_cols],2,as.factor)) #2 indicates columns
+```
+
+```{r}
+str(train_data)
+```
+
+# EDA
+
+## Categorical columns distribution
+
+```{r}
+for (i in cat_cols){
+  barplot(table(train_data[,i]),col = "brown",main = paste("Distribution of ",i))  
+}
+```
+
+
+# Data Pre-processing
+
+## Train-Validation Split
+
+* will split the train data into further train and validation. test data is already given.
+
+```{r}
+set.seed(007) # set seed for reproducible results
+library(caret)
+```
+```{r}
+
+train_rows  <- createDataPartition(train_data$target, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+
+train_data_splitted <- train_data[train_rows, ]
+
+val_data <- train_data[-train_rows, ]
+```
+
+```{r}
+str(train_data_splitted)
+```
+
+## Imputation : Missing Values 
+
+```{r}
+library(RANN)
+library(DMwR)
+```
+
+### Imputation of Train and val data
+
+
+* Check the number of missing values in the data frame
+```{r}
+sum(is.na(train_data_splitted)) #sum returns the sum of all the values present in its arguments.
+```
+* hence there are total 26609 missing or NA values in train data set
+
+```{r}
+colSums(is.na(train_data_splitted)) # will return the total NA values for each column in train data set
+```
+
+```{r}
+imput_train_num=preProcess(x=train_data_splitted[,!colnames(train_data_splitted) %in% c("target")],method = c("knnImpute"))
+train2=predict(imput_train_num,train_data_splitted)
+
+val_data = predict(imput_train_num, val_data)
+
+#summary(train2)
+str(train2)
+```
+```{r}
+sum(is.na(train2))
+```
+
+
+* impute cat col from train data
+```{r}
+ for (x in cat_cols){
+  subs = names(which(table(train2[,x]) == max(table(train2[,x]))))
+  train2[,x][is.na(train2[,x])] = subs
+ }
+summary(train2)
+```
+
+```{r}
+sum(is.na(train2))
+```
+
+```{r}
+sum(is.na(val_data))
+```
+
+
+* impute cat col in val data
+
+```{r}
+for (x in cat_cols){
+  subs = names(which(table(val_data[,x]) == max(table(val_data[,x]))))
+  val_data[,x][is.na(val_data[,x])] = subs
+ }
+summary(val_data)
+```
+```{r}
+sum(is.na(val_data))
+```
+
+## Correlation plot
+
+```{r}
+library(corrplot)
+```
+
+```{r}
+corrplot(cor(train2[num_cols]))
+```
+
+
+
+
+`
+
+## Dummify the Data
+* Use the dummyVars() function from caret to convert gender and age into dummy variables
+* Takes character and factors as factors implicitly.
+
+```{r}
+dummy_obj <- dummyVars( ~ . , train2)
+
+train_dummy_data <- as.data.frame(predict(dummy_obj, train2))
+
+val_dummy_data <- as.data.frame(predict(dummy_obj, val_data))
+```
+
+```{r}
+str(train_dummy_data)
+```
+
+
+## Build a model
+* Basic Logistic Regression Model
+```{r}
+log_reg <- glm(target~., data = train_dummy_data, family = binomial)
+
+summary(log_reg)
+```
+
+
+
+* Calculating the log likelihood
+```{r}
+logLik(log_reg)
+```
+
+
+## ROC
+
+```{r}
+prob_train <- predict(log_reg, type = "response")
+prob_train
+```
+```{r}
+library(ROCR)
+```
+
+
+```{r}
+pred <- prediction(prob_train, train_dummy_data$target)
+##Extract performance measures 
+perf <- performance(pred, measure="tpr", x.measure="fpr")
+## Plot the ROC curve
+plot(perf, col=rainbow(10), colorize=T, print.cutoffs.at=seq(0,1,0.05))
+```
+
+```{r}
+# Extract the AUC score
+perf_auc <- performance(pred, measure="auc")
+perf_auc
+```
+
+
+```{r}
+auc <- perf_auc@y.values[[1]]
+print(auc)
+```
+
+```{r}
+prob_val <- predict(log_reg, val_dummy_data, type = "response")
+```
+
+```{r}
+preds_val <- ifelse(prob_val > 0.5, "1", "0")
+preds_val
+#preds_test
+```
+
+# Evaluation Metrics for classification
+
+* Create a confusion matrix using the table() function
+```{r}
+val_data_labs <- val_data$target
+
+conf_matrix <- table(val_data_labs, preds_val)
+
+print(conf_matrix)
+
+```
+#### Specificity
+```{r}
+specificity <- conf_matrix[1, 1]/sum(conf_matrix[1, ])
+
+print(specificity)
+
+```
+#### Sensitivity
+```{r}
+sensitivity <- conf_matrix[2, 2]/sum(conf_matrix[2, ])
+
+print(sensitivity)
+
+```
+#### Accuracy
+
+
+```{r}
+accuracy <- sum(diag(conf_matrix))/sum(conf_matrix)
+
+print(accuracy)
+
+```
+
+## Automated Computation through Caret
+
+```{r}
+preds_val=as.factor(preds_val)
+
+val_data$target=as.factor(val_data$target)
+
+library(caret)
+(confusionMatrix(preds_val,val_data$target, positive = "1"))
+
+
+
+
+```
+# test data
+### Dummify the Data
+
+```{r}
+test1=read.csv(file="Income_Group_test_data.csv",header = TRUE)
+```
+
+```{r}
+num_num1=c("index","age","financial_weight","tax_paid","gain","loss","working_hours")
+cat_num1=setdiff(colnames(test1), num_num1)
+num_num1
+cat_num1
+test1[,cat_num1]=data.frame(apply(test1[,cat_num1],2,as.factor))
+str(test1)
+```
+```{r}
+## Imputation of test data
+imput_num1=preProcess(x=test1[,!colnames(test1) %in% c("target")],method = c("knnImpute"))
+test2=predict(imput_num1,test1)
+summary(test2)
+str(test2)
+
+### Imputation of catagorical
+ for (x in cat_num1){
+  subs = names(which(table(test2[,x]) == max(table(test2[,x]))))
+  test2[,x][is.na(test2[,x])] = subs
+ }
+summary(test2)
+sum(is.na(test2))
+```
+
+
+
+
+
+```{r}
+dummy_obj1 <- dummyVars( ~ . , train2[,colnames(test2)])
+ traindata<- as.data.frame(predict(dummy_obj1, train2)) 
+ traindata$target=train2$target
+ testdata <- as.data.frame(predict(dummy_obj1, test2))
+#colnames(traindata)
+```
+#Predictions on test data
+
+```{r}
+
+prob_test1 <- predict(log_reg, testdata, type = "response")
+
+preds_test2 <- ifelse(prob_test1 > 0.5, "1", "0")
+#preds_test2
+length(preds_test2)
+
+
+```
+
+
+
+
+```{r}
+index = test1$index
+sAM=data.frame(index,preds_test2)
+samp1=write.csv(sAM, file = "OUTPUT.csv")
+```
+
+
+
+
